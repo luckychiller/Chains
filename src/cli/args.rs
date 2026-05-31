@@ -47,4 +47,18 @@ pub enum Commands {
         #[arg(short, long)]
         key: Option<String>,
     },
+    /// Rotate the epoch key for a streaming chain
+    EpochRotate {
+        chain_id: String,
+    },
+    /// Run garbage collection (prune expired bodies/snapshots)
+    Gc {
+        chain_id: String,
+    },
+    /// Initialize a Double Ratchet session for private messaging
+    RatchetInit {
+        chain_id: String,
+        #[arg(short, long)]
+        remote_key: Option<String>,
+    },
 }

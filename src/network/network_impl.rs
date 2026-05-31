@@ -1,6 +1,0 @@
-pub mod protocol;
-pub mod behavior;
-
-pub use protocol::{GossipMessage, SyncRequest, SyncResponse};
-pub use behavior::{ChainsBehaviour, ChainsBehaviourEvent};
-pub use network_impl::Network;

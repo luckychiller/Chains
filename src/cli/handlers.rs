@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::models::{Header, Body, ChainsResult};
 use crate::storage::Storage;
-use crate::network::Network;
 use ed25519_dalek::SigningKey;
 use std::time::{SystemTime, UNIX_EPOCH};
 

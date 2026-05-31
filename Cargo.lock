@@ -398,13 +398,16 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
+ "hmac",
  "libp2p",
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "sha2",
  "sled",
  "tokio",
  "void",
+ "x25519-dalek",
 ]
 
 [[package]]
@@ -587,6 +590,7 @@ dependencies = [
  "digest",
  "fiat-crypto",
  "rustc_version",
+ "serde",
  "subtle",
  "zeroize",
 ]

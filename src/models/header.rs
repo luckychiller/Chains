@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, Signer};
 use crate::crypto::hashing;
 
 /// A specialized Result type for Chains operations.

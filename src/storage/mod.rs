@@ -1,6 +1,9 @@
 use sled;
 use crate::models::{Header, Body, Chain, ChainsResult};
+use crate::crypto::ratchet::RatchetState;
 use std::collections::HashMap;
+
+pub mod gc;
 
 /// Persistent storage manager using Sled.
 ///
@@ -127,5 +130,54 @@ impl Storage {
         let chain = Chain { id: *chain_id, headers, bodies };
         chain.validate()?;
         Ok(Some(chain))
+    }
+
+    pub fn store_ratchet_session(&self, session_id: &[u8; 32], state: &RatchetState) -> ChainsResult<()> {
+        let key = format!("ratchet:{}", hex::encode(session_id));
+        let value = bincode::serialize(state)?;
+        self.db.insert(key.as_bytes(), value)?;
+        Ok(())
+    }
+
+    pub fn get_ratchet_session(&self, session_id: &[u8; 32]) -> ChainsResult<Option<RatchetState>> {
+        let key = format!("ratchet:{}", hex::encode(session_id));
+        if let Some(value) = self.db.get(key.as_bytes())? {
+            let state: RatchetState = bincode::deserialize(&value)?;
+            Ok(Some(state))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_epoch_keys(&self, chain_id: &[u8; 32]) -> ChainsResult<Vec<[u8; 32]>> {
+        let mut keys = Vec::new();
+        let prefix = format!("epoch:{}:", hex::encode(chain_id));
+        for kv in self.db.scan_prefix(prefix.as_bytes()) {
+            let (key, value) = kv?;
+            let key_str = std::str::from_utf8(&key)?;
+            if let Some(_rest) = key_str.strip_prefix(&prefix) {
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&value);
+                keys.push(k);
+            }
+        }
+        Ok(keys)
+    }
+
+    pub fn store_epoch_key(&self, chain_id: &[u8; 32], epoch: u64, key: &[u8; 32]) -> ChainsResult<()> {
+        let db_key = format!("epoch:{}:{}", hex::encode(chain_id), epoch);
+        self.db.insert(db_key.as_bytes(), key)?;
+        Ok(())
+    }
+
+    pub fn get_epoch_key(&self, chain_id: &[u8; 32], epoch: u64) -> ChainsResult<Option<[u8; 32]>> {
+        let db_key = format!("epoch:{}:{}", hex::encode(chain_id), epoch);
+        if let Some(value) = self.db.get(db_key.as_bytes())? {
+            let mut k = [0u8; 32];
+            k.copy_from_slice(&value);
+            Ok(Some(k))
+        } else {
+            Ok(None)
+        }
     }
 }

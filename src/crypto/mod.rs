@@ -6,6 +6,12 @@ pub mod hashing {
     }
 }
 
+/// Double Ratchet encryption for private messaging.
+pub mod ratchet;
+
+/// Rotational Epoch Keys for public streaming.
+pub mod epoch;
+
 /// Key generation and management.
 pub mod keys {
     use ed25519_dalek::SigningKey;
