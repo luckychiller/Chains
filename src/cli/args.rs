@@ -33,9 +33,7 @@ pub enum Commands {
         key: Option<String>,
     },
     /// Verify chain integrity
-    Verify {
-        chain_id: String,
-    },
+    Verify { chain_id: String },
     /// Start P2P daemon with GossipSub + Kademlia DHT
     Daemon {
         #[arg(short, long)]
@@ -48,13 +46,9 @@ pub enum Commands {
         key: Option<String>,
     },
     /// Rotate the epoch key for a streaming chain
-    EpochRotate {
-        chain_id: String,
-    },
+    EpochRotate { chain_id: String },
     /// Run garbage collection (prune expired bodies/snapshots)
-    Gc {
-        chain_id: String,
-    },
+    Gc { chain_id: String },
     /// Initialize a Double Ratchet session for private messaging
     RatchetInit {
         chain_id: String,

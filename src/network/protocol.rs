@@ -1,5 +1,5 @@
+use crate::models::{Body, Header};
 use serde::{Deserialize, Serialize};
-use crate::models::{Header, Body};
 
 /// Protocol constants.
 pub const CHAINS_PROTOCOL: &str = "/chains/0.1.0";

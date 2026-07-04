@@ -1,8 +1,8 @@
+use crate::models::body::Body;
+use crate::models::header::{ChainsResult, Header};
+use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use ed25519_dalek::SigningKey;
-use crate::models::header::{Header, ChainsResult};
-use crate::models::body::Body;
 
 /// A high-level representation of an append-only cryptographic stream.
 #[derive(Clone, Debug)]
@@ -34,7 +34,11 @@ impl Chain {
         for (i, header) in self.headers.iter().enumerate() {
             let expected_seq = (i + 1) as u64;
             if header.sequence != expected_seq {
-                return Err(format!("Sequence error at {}: expected {}, got {}", i, expected_seq, header.sequence).into());
+                return Err(format!(
+                    "Sequence error at {}: expected {}, got {}",
+                    i, expected_seq, header.sequence
+                )
+                .into());
             }
 
             if header.chain_id != self.id {
@@ -73,7 +77,11 @@ impl Chain {
     ) -> ChainsResult<Chain> {
         let mut new_chain = self.clone();
         let sequence = (new_chain.headers.len() + 1) as u64;
-        let prev_hash = new_chain.headers.last().map(|h| h.block_id).unwrap_or([0u8; 32]);
+        let prev_hash = new_chain
+            .headers
+            .last()
+            .map(|h| h.block_id)
+            .unwrap_or([0u8; 32]);
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         let mut body = if let Some(key) = encryption_key {
@@ -81,7 +89,7 @@ impl Chain {
         } else {
             Body::new([0; 32], data)
         };
-        
+
         let header = Header::new(
             new_chain.id,
             signing_key.verifying_key().to_bytes(),

@@ -1,16 +1,16 @@
-use serde::{Deserialize, Serialize};
-use chacha20poly1305::{
-    aead::{Aead, KeyInit, OsRng, AeadCore},
-    XChaCha20Poly1305, XNonce,
-};
 use crate::crypto::hashing;
 use crate::models::header::ChainsResult;
+use chacha20poly1305::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    XChaCha20Poly1305, XNonce,
+};
+use serde::{Deserialize, Serialize};
 
 /// The heavyweight payload of a block.
 ///
 /// Bodies contain the actual data (e.g., chat messages, video frames) and
 /// can be encrypted using XChaCha20-Poly1305.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Body {
     /// Links the body to its corresponding Header.
     pub block_id: [u8; 32],
@@ -37,8 +37,9 @@ impl Body {
     pub fn new_encrypted(block_id: [u8; 32], data: &[u8], key: &[u8; 32]) -> ChainsResult<Self> {
         let cipher = XChaCha20Poly1305::new(key.into());
         let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
-        
-        let ciphertext = cipher.encrypt(&nonce, data)
+
+        let ciphertext = cipher
+            .encrypt(&nonce, data)
             .map_err(|e| format!("Encryption failed: {}", e))?;
 
         let mut nonce_bytes = [0u8; 24];
@@ -65,7 +66,8 @@ impl Body {
         let cipher = XChaCha20Poly1305::new(key.into());
         let nonce = XNonce::from_slice(&self.nonce);
 
-        let plaintext = cipher.decrypt(nonce, self.ciphertext.as_slice())
+        let plaintext = cipher
+            .decrypt(nonce, self.ciphertext.as_slice())
             .map_err(|e| format!("Decryption failed: {}", e))?;
 
         Ok(plaintext)

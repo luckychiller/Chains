@@ -1,14 +1,14 @@
-use clap::Parser;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use crate::storage::Storage;
-use crate::models::ChainsResult;
-use crate::crypto::keys::generate_signing_key;
 use crate::cli::args::{Cli, Commands};
 use crate::cli::handlers::CommandHandlers;
+use crate::crypto::keys::generate_signing_key;
+use crate::models::ChainsResult;
+use crate::storage::Storage;
+use clap::Parser;
 use ed25519_dalek::SigningKey;
 use rand::random;
 use std::fs;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub mod args;
 pub mod handlers;
@@ -19,7 +19,12 @@ pub async fn run() -> ChainsResult<()> {
     let signing_key = load_or_generate_identity()?;
 
     match cli.command {
-        Commands::Daemon { chain_id, data_dir, no_repl, key } => {
+        Commands::Daemon {
+            chain_id,
+            data_dir,
+            no_repl,
+            key,
+        } => {
             let storage = Arc::new(Mutex::new(Storage::new(&data_dir)?));
             let enc_key = parse_key_opt(key.as_deref())?;
             run_daemon(storage, signing_key, chain_id, &data_dir, no_repl, enc_key).await?;
@@ -32,10 +37,23 @@ pub async fn run() -> ChainsResult<()> {
                     storage.lock().await.create_chain(&id)?;
                     println!("Created chain: {}", hex::encode(id));
                 }
-                Commands::Append { chain_id, data, ttl, key } => {
+                Commands::Append {
+                    chain_id,
+                    data,
+                    ttl,
+                    key,
+                } => {
                     let id = parse_id(&chain_id)?;
                     let enc_key = parse_key_opt(key.as_deref())?;
-                    CommandHandlers::append_local(&storage, &signing_key, id, &data, ttl, enc_key.as_ref()).await?;
+                    CommandHandlers::append_local(
+                        &storage,
+                        &signing_key,
+                        id,
+                        &data,
+                        ttl,
+                        enc_key.as_ref(),
+                    )
+                    .await?;
                 }
                 Commands::List => {
                     let chains = storage.lock().await.list_chains()?;
@@ -79,13 +97,16 @@ pub async fn run() -> ChainsResult<()> {
                     println!("GC complete: {} bodies pruned, {} headers pruned, {} snapshots created, {} bytes freed",
                         stats.bodies_pruned, stats.headers_pruned, stats.snapshots_created, stats.bytes_freed);
                 }
-                Commands::RatchetInit { chain_id, remote_key } => {
+                Commands::RatchetInit {
+                    chain_id,
+                    remote_key,
+                } => {
                     let id = parse_id(&chain_id)?;
                     let storage = storage.lock().await;
                     if !storage.chain_exists(&id)? {
                         return Err("Chain not found.".into());
                     }
-                    use crate::crypto::ratchet::{RatchetState, generate_dh_keypair};
+                    use crate::crypto::ratchet::{generate_dh_keypair, RatchetState};
                     let (sk, pk) = generate_dh_keypair();
                     let root_key: [u8; 32] = rand::random();
                     let session = if let Some(rk_hex) = remote_key {
@@ -95,7 +116,11 @@ pub async fn run() -> ChainsResult<()> {
                         RatchetState::new_sender(root_key, sk, pk)
                     };
                     storage.store_ratchet_session(&id, &session)?;
-                    println!("Ratchet session initialized for chain {} with pubkey: {}", hex::encode(id), hex::encode(pk));
+                    println!(
+                        "Ratchet session initialized for chain {} with pubkey: {}",
+                        hex::encode(id),
+                        hex::encode(pk)
+                    );
                 }
                 _ => unreachable!(),
             }
@@ -198,7 +223,9 @@ async fn run_daemon(
 
 fn parse_id(s: &str) -> ChainsResult<[u8; 32]> {
     let bytes = hex::decode(s)?;
-    if bytes.len() != 32 { return Err("Invalid ID length".into()); }
+    if bytes.len() != 32 {
+        return Err("Invalid ID length".into());
+    }
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
     Ok(arr)
@@ -207,8 +234,14 @@ fn parse_id(s: &str) -> ChainsResult<[u8; 32]> {
 fn parse_key_opt(key: Option<&str>) -> ChainsResult<Option<[u8; 32]>> {
     match key {
         Some(k) => {
-            let bytes = if k.len() == 64 { hex::decode(k)? } else { k.as_bytes().to_vec() };
-            if bytes.len() != 32 { return Err("Key must be 32 bytes".into()); }
+            let bytes = if k.len() == 64 {
+                hex::decode(k)?
+            } else {
+                k.as_bytes().to_vec()
+            };
+            if bytes.len() != 32 {
+                return Err("Key must be 32 bytes".into());
+            }
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             Ok(Some(arr))

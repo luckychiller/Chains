@@ -1,18 +1,20 @@
 use libp2p::{
+    gossipsub, identify,
+    identity::Keypair,
+    kad, mdns, noise, request_response,
     swarm::{Swarm, SwarmEvent},
-    identity::Keypair, PeerId, StreamProtocol,
-    kad, gossipsub, mdns, identify,
-    request_response,
-    tcp, noise, yamux,
+    tcp, yamux, PeerId, StreamProtocol,
 };
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
-use crate::models::{Header, Body, ChainsResult};
-use crate::storage::Storage;
-use crate::network::protocol::{GossipMessage, SyncRequest, SyncResponse, CHAINS_PROTOCOL, SYNC_PROTOCOL};
+use crate::models::{Body, ChainsResult, Header};
 use crate::network::behavior::{ChainsBehaviour, ChainsBehaviourEvent};
+use crate::network::protocol::{
+    GossipMessage, SyncRequest, SyncResponse, CHAINS_PROTOCOL, SYNC_PROTOCOL,
+};
+use crate::storage::Storage;
 
 pub struct Network {
     pub peer_id: PeerId,
@@ -53,26 +55,42 @@ impl Network {
                     format!("gossipsub: {}", e).into()
                 })?;
 
-                let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())
-                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+                let mdns =
+                    mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())
+                        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
 
-                let identify = identify::Behaviour::new(
-                    identify::Config::new(CHAINS_PROTOCOL.into(), key.public()),
-                );
+                let identify = identify::Behaviour::new(identify::Config::new(
+                    CHAINS_PROTOCOL.into(),
+                    key.public(),
+                ));
 
                 let sync = request_response::cbor::Behaviour::new(
-                    [(StreamProtocol::new(SYNC_PROTOCOL), request_response::ProtocolSupport::Full)],
+                    [(
+                        StreamProtocol::new(SYNC_PROTOCOL),
+                        request_response::ProtocolSupport::Full,
+                    )],
                     request_response::Config::default(),
                 );
 
-                Ok(ChainsBehaviour { kademlia, gossipsub, mdns, identify, sync })
+                Ok(ChainsBehaviour {
+                    kademlia,
+                    gossipsub,
+                    mdns,
+                    identify,
+                    sync,
+                })
             })?
             .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))
             .build();
 
         swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-        Ok(Network { peer_id, swarm, storage, subscriptions: Vec::new() })
+        Ok(Network {
+            peer_id,
+            swarm,
+            storage,
+            subscriptions: Vec::new(),
+        })
     }
 
     pub fn subscribe(&mut self, chain_id: &[u8; 32]) -> ChainsResult<()> {
@@ -106,9 +124,10 @@ impl Network {
         event: SwarmEvent<ChainsBehaviourEvent>,
     ) -> ChainsResult<()> {
         match event {
-            SwarmEvent::Behaviour(ChainsBehaviourEvent::Gossipsub(
-                gossipsub::Event::Message { message, .. },
-            )) => {
+            SwarmEvent::Behaviour(ChainsBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                message,
+                ..
+            })) => {
                 if let Err(e) = self.handle_gossip_message(message).await {
                     eprintln!("[p2p] gossip error: {}", e);
                 }
@@ -120,9 +139,7 @@ impl Network {
                 self.handle_sync_message(peer, message).await?;
             }
 
-            SwarmEvent::Behaviour(ChainsBehaviourEvent::Mdns(
-                mdns::Event::Discovered(list),
-            )) => {
+            SwarmEvent::Behaviour(ChainsBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 for (peer, addr) in list {
                     self.swarm.behaviour_mut().kademlia.add_address(&peer, addr);
                 }
@@ -136,7 +153,9 @@ impl Network {
                 for chain_id in &self.subscriptions.clone() {
                     self.swarm.behaviour_mut().sync.send_request(
                         &peer_id,
-                        SyncRequest::GetLatestSequence { chain_id: *chain_id },
+                        SyncRequest::GetLatestSequence {
+                            chain_id: *chain_id,
+                        },
                     );
                 }
             }
@@ -155,7 +174,9 @@ impl Network {
         message: request_response::Message<SyncRequest, SyncResponse>,
     ) -> ChainsResult<()> {
         match message {
-            request_response::Message::Request { request, channel, .. } => {
+            request_response::Message::Request {
+                request, channel, ..
+            } => {
                 let response = match request {
                     SyncRequest::GetLatestSequence { chain_id } => {
                         let storage = self.storage.lock().await;
@@ -164,7 +185,11 @@ impl Network {
                             Err(e) => SyncResponse::Error(e.to_string()),
                         }
                     }
-                    SyncRequest::GetHeaders { chain_id, start_seq, end_seq } => {
+                    SyncRequest::GetHeaders {
+                        chain_id,
+                        start_seq,
+                        end_seq,
+                    } => {
                         let storage = self.storage.lock().await;
                         let mut headers = Vec::new();
                         for seq in start_seq..=end_seq {
@@ -184,11 +209,18 @@ impl Network {
                         }
                     }
                 };
-                let _ = self.swarm.behaviour_mut().sync.send_response(channel, response);
+                let _ = self
+                    .swarm
+                    .behaviour_mut()
+                    .sync
+                    .send_response(channel, response);
             }
             request_response::Message::Response { response, .. } => {
                 match response {
-                    SyncResponse::LatestSequence { chain_id, sequence: remote_seq } => {
+                    SyncResponse::LatestSequence {
+                        chain_id,
+                        sequence: remote_seq,
+                    } => {
                         let storage = self.storage.lock().await;
                         let local_seq = storage.get_latest_sequence(&chain_id).unwrap_or(0);
 
@@ -207,8 +239,14 @@ impl Network {
                         }
                     }
                     SyncResponse::Headers(headers) => {
-                        if headers.is_empty() { return Ok(()); }
-                        println!("[p2p] received {} headers for sync from {:?}", headers.len(), peer);
+                        if headers.is_empty() {
+                            return Ok(());
+                        }
+                        println!(
+                            "[p2p] received {} headers for sync from {:?}",
+                            headers.len(),
+                            peer
+                        );
 
                         let storage = self.storage.lock().await;
                         for header in headers {
@@ -224,18 +262,28 @@ impl Network {
 
                                 storage.store_header(&chain_id, seq, &header)?;
                                 storage.update_latest_sequence(&chain_id, seq)?;
-                                println!("[p2p] synced header {} for chain {}", seq, hex::encode(&chain_id[..4]));
+                                println!(
+                                    "[p2p] synced header {} for chain {}",
+                                    seq,
+                                    hex::encode(&chain_id[..4])
+                                );
 
                                 self.swarm.behaviour_mut().sync.send_request(
                                     &peer,
-                                    SyncRequest::GetBody { block_id: header.block_id },
+                                    SyncRequest::GetBody {
+                                        block_id: header.block_id,
+                                    },
                                 );
                             }
                         }
                     }
                     SyncResponse::Body(body) => {
                         if let Some(body) = body {
-                            println!("[p2p] received body for block {} from {:?}", hex::encode(&body.block_id[..4]), peer);
+                            println!(
+                                "[p2p] received body for block {} from {:?}",
+                                hex::encode(&body.block_id[..4]),
+                                peer
+                            );
                             let storage = self.storage.lock().await;
                             storage.store_body(&body.block_id, &body)?;
                         }
@@ -249,10 +297,7 @@ impl Network {
         Ok(())
     }
 
-    async fn handle_gossip_message(
-        &mut self,
-        msg: gossipsub::Message,
-    ) -> ChainsResult<()> {
+    async fn handle_gossip_message(&mut self, msg: gossipsub::Message) -> ChainsResult<()> {
         let gossip: GossipMessage = match bincode::deserialize(&msg.data) {
             Ok(m) => m,
             Err(_) => return Ok(()),
@@ -291,7 +336,11 @@ impl Network {
                     "[p2p] block {} on chain {}: {:?}",
                     header.sequence,
                     hex::encode(&header.chain_id[..8]),
-                    if text.len() > 60 { format!("{}...", &text[..60]) } else { text.to_string() },
+                    if text.len() > 60 {
+                        format!("{}...", &text[..60])
+                    } else {
+                        text.to_string()
+                    },
                 );
             }
         }
@@ -300,8 +349,8 @@ impl Network {
 }
 
 fn load_or_create_p2p_keypair(data_dir: &str) -> ChainsResult<Keypair> {
-    use std::path::Path;
     use std::fs;
+    use std::path::Path;
     let path = if data_dir.is_empty() || data_dir.ends_with("chains.db") {
         let parent = Path::new(data_dir).parent().unwrap_or(Path::new("."));
         parent.join("p2p.key")
@@ -314,6 +363,10 @@ fn load_or_create_p2p_keypair(data_dir: &str) -> ChainsResult<Keypair> {
         }
     }
     let kp = Keypair::generate_ed25519();
-    fs::write(&path, kp.to_protobuf_encoding().map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?)?;
+    fs::write(
+        &path,
+        kp.to_protobuf_encoding()
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?,
+    )?;
     Ok(kp)
 }

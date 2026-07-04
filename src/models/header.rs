@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use ed25519_dalek::{SigningKey, Signer};
 use crate::crypto::hashing;
+use ed25519_dalek::{Signer, SigningKey};
+use serde::{Deserialize, Serialize};
 
 /// A specialized Result type for Chains operations.
 pub type ChainsResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -9,7 +9,7 @@ pub type ChainsResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 ///
 /// Headers are designed to be gossiped quickly across the network to verify
 /// the integrity and order of a stream without requiring the full payload.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// BLAKE3 hash of the serialized header (excluding this field).
     pub block_id: [u8; 32],
@@ -33,6 +33,7 @@ pub struct Header {
 
 impl Header {
     /// Creates and signs a new Header.
+    #[allow(clippy::too_many_arguments)] // constructor mirrors the wire format
     pub fn new(
         chain_id: [u8; 32],
         author_id: [u8; 32],
@@ -62,10 +63,19 @@ impl Header {
         header
     }
 
-    /// Data used for signing (prev_hash + body_hash + sequence).
+    /// Data used for signing: every field except `block_id` and `signature`,
+    /// so no field can be tampered with after signing.
     fn signing_data(&self) -> Vec<u8> {
-        [&self.prev_hash[..], &self.body_hash[..], &self.sequence.to_le_bytes()[..]]
-            .concat()
+        bincode::serialize(&(
+            self.chain_id,
+            self.author_id,
+            self.sequence,
+            self.timestamp,
+            self.prev_hash,
+            self.body_hash,
+            self.ttl,
+        ))
+        .unwrap()
     }
 
     /// Serializes the header excluding the block_id for hashing.
@@ -93,7 +103,10 @@ impl Header {
         use ed25519_dalek::{Signature, Verifier, VerifyingKey};
         let key = VerifyingKey::from_bytes(&self.author_id)
             .map_err(|e| format!("Invalid author key: {}", e))?;
-        let sig_bytes: [u8; 64] = self.signature.as_slice().try_into()
+        let sig_bytes: [u8; 64] = self
+            .signature
+            .as_slice()
+            .try_into()
             .map_err(|_| "Invalid signature length")?;
         let signature = Signature::from_bytes(&sig_bytes);
 

@@ -1,9 +1,9 @@
-use rand::random;
+use crate::models::ChainsResult;
 use chacha20poly1305::{
-    aead::{Aead, KeyInit, OsRng, AeadCore},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     XChaCha20Poly1305, XNonce,
 };
-use crate::models::ChainsResult;
+use rand::random;
 
 #[derive(Clone, Debug)]
 pub struct EpochKey {
@@ -19,12 +19,22 @@ pub struct EpochManager {
     banned: Vec<[u8; 32]>,
 }
 
+impl Default for EpochManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EpochManager {
     pub fn new() -> Self {
         let key = generate_epoch_key();
         EpochManager {
             current_epoch: 1,
-            keys: vec![EpochKey { epoch: 1, key, created_at: current_time() }],
+            keys: vec![EpochKey {
+                epoch: 1,
+                key,
+                created_at: current_time(),
+            }],
             banned: Vec::new(),
         }
     }
@@ -58,13 +68,21 @@ impl EpochManager {
         self.banned.contains(user_id)
     }
 
-    pub fn encrypt_for_subscriber(&self, subscriber_key: &[u8; 32], epoch: u64) -> ChainsResult<Vec<u8>> {
-        let ek = self.keys.iter().find(|k| k.epoch == epoch)
+    pub fn encrypt_for_subscriber(
+        &self,
+        subscriber_key: &[u8; 32],
+        epoch: u64,
+    ) -> ChainsResult<Vec<u8>> {
+        let ek = self
+            .keys
+            .iter()
+            .find(|k| k.epoch == epoch)
             .ok_or_else(|| format!("Epoch {} not found", epoch))?;
         let cipher = XChaCha20Poly1305::new_from_slice(subscriber_key)
             .map_err(|e| format!("Invalid subscriber key: {}", e))?;
         let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
-        let ciphertext = cipher.encrypt(&nonce, &ek.key[..])
+        let ciphertext = cipher
+            .encrypt(&nonce, &ek.key[..])
             .map_err(|e| format!("Encrypt epoch key failed: {}", e))?;
         let mut out = epoch.to_le_bytes().to_vec();
         out.extend_from_slice(&nonce);
@@ -82,9 +100,10 @@ impl EpochManager {
         let mut nonce = [0u8; 24];
         nonce.copy_from_slice(nonce_bytes);
         let nonce_ref = XNonce::from_slice(&nonce);
-        let cipher = XChaCha20Poly1305::new_from_slice(my_key)
-            .map_err(|e| format!("Invalid key: {}", e))?;
-        let plaintext = cipher.decrypt(nonce_ref, ciphertext)
+        let cipher =
+            XChaCha20Poly1305::new_from_slice(my_key).map_err(|e| format!("Invalid key: {}", e))?;
+        let plaintext = cipher
+            .decrypt(nonce_ref, ciphertext)
             .map_err(|e| format!("Decrypt epoch key failed: {}", e))?;
         let mut epoch_key = [0u8; 32];
         epoch_key.copy_from_slice(&plaintext);
@@ -102,5 +121,8 @@ fn generate_epoch_key() -> [u8; 32] {
 
 fn current_time() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }

@@ -1,12 +1,12 @@
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use x25519_dalek::{StaticSecret, PublicKey};
+use crate::models::ChainsResult;
 use chacha20poly1305::{
-    aead::{Aead, KeyInit, OsRng, AeadCore},
+    aead::{Aead, AeadCore, KeyInit, OsRng},
     XChaCha20Poly1305, XNonce,
 };
-use serde::{Serialize, Deserialize};
-use crate::models::ChainsResult;
+use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use x25519_dalek::{PublicKey, StaticSecret};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -109,7 +109,12 @@ impl RatchetState {
         }
     }
 
-    pub fn new_receiver(root_key: [u8; 32], dh_private: [u8; 32], dh_public: [u8; 32], dh_remote: [u8; 32]) -> Self {
+    pub fn new_receiver(
+        root_key: [u8; 32],
+        dh_private: [u8; 32],
+        dh_public: [u8; 32],
+        dh_remote: [u8; 32],
+    ) -> Self {
         RatchetState {
             root_key,
             send_chain_key: None,
@@ -148,9 +153,9 @@ impl RatchetState {
         self.send_chain_key = Some(next_chain_key);
 
         let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
-        let cipher = XChaCha20Poly1305::new_from_slice(&msg_key)
-            .expect("valid key");
-        let ciphertext = cipher.encrypt(&nonce, plaintext)
+        let cipher = XChaCha20Poly1305::new_from_slice(&msg_key).expect("valid key");
+        let ciphertext = cipher
+            .encrypt(&nonce, plaintext)
             .map_err(|e| format!("Ratchet encrypt failed: {}", e))?;
 
         let mut nonce_bytes = [0u8; 24];
@@ -172,7 +177,7 @@ impl RatchetState {
         self.try_skipped_message_keys(msg)?;
 
         let remote_pk = PublicKey::from(msg.dh_public_key);
-        let needs_dh_ratchet = self.dh_remote.map_or(true, |r| r != msg.dh_public_key);
+        let needs_dh_ratchet = self.dh_remote != Some(msg.dh_public_key);
 
         if needs_dh_ratchet {
             self.dh_remote_prev = self.dh_remote.take();
@@ -195,16 +200,15 @@ impl RatchetState {
             self.dh_private = new_sk.to_bytes();
             self.dh_public = new_pk.to_bytes();
 
-            if self.send_chain_key.is_none() {
-                let sk2 = StaticSecret::from(self.dh_private);
-                let shared2 = sk2.diffie_hellman(&remote_pk);
-                let (new_root2, new_send_chain) = hkdf_derive(&self.root_key, shared2.as_bytes());
-                self.root_key = new_root2;
-                self.send_chain_key = Some(new_send_chain);
-            }
+            // A DH ratchet step replaces BOTH chains. Invalidate the send
+            // chain so the next encrypt derives a fresh one from the new
+            // keypair; keeping the old chain here desyncs the conversation
+            // after the second round-trip.
+            self.send_chain_key = None;
         }
 
-        let chain_key = self.recv_chain_key
+        let chain_key = self
+            .recv_chain_key
             .ok_or_else(|| "No receiving chain key available".to_string())?;
 
         let msg_key = hmac_sha256(&chain_key, HMAC_KEY_MESSAGE);
@@ -212,16 +216,19 @@ impl RatchetState {
         self.recv_chain_key = Some(next_chain_key);
 
         let nonce = XNonce::from_slice(&msg.nonce);
-        let cipher = XChaCha20Poly1305::new_from_slice(&msg_key)
-            .expect("valid key");
-        let plaintext = cipher.decrypt(nonce, msg.ciphertext.as_slice())
+        let cipher = XChaCha20Poly1305::new_from_slice(&msg_key).expect("valid key");
+        let plaintext = cipher
+            .decrypt(nonce, msg.ciphertext.as_slice())
             .map_err(|e| format!("Ratchet decrypt failed: {}", e))?;
 
         Ok(plaintext)
     }
 
     fn try_skipped_message_keys(&mut self, msg: &CipherMessage) -> ChainsResult<()> {
-        let pos = self.skipped_message_keys.iter().position(|(n, _)| *n == msg.message_number);
+        let pos = self
+            .skipped_message_keys
+            .iter()
+            .position(|(n, _)| *n == msg.message_number);
         if let Some(idx) = pos {
             let (_, _) = self.skipped_message_keys.swap_remove(idx);
         }

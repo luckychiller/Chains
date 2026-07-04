@@ -1,4 +1,4 @@
-use crate::models::{Header, ChainsResult};
+use crate::models::{ChainsResult, Header};
 use crate::storage::Storage;
 
 const SNAPSHOT_INTERVAL: u64 = 10_000;
@@ -67,7 +67,7 @@ impl Storage {
     }
 
     pub fn delete_header(&self, chain_id: &[u8; 32], sequence: u64) -> ChainsResult<()> {
-        let key = format!("header:{}:{:x}", hex::encode(chain_id), sequence);
+        let key = crate::storage::header_key(chain_id, sequence);
         self.db.remove(key.as_bytes())?;
         Ok(())
     }
@@ -97,7 +97,11 @@ impl Storage {
         }
     }
 
-    pub fn prune_headers_before_snapshot(&self, chain_id: &[u8; 32], snapshot_seq: u64) -> ChainsResult<u64> {
+    pub fn prune_headers_before_snapshot(
+        &self,
+        chain_id: &[u8; 32],
+        snapshot_seq: u64,
+    ) -> ChainsResult<u64> {
         let mut pruned = 0u64;
         for seq in 1..snapshot_seq {
             if let Some(header) = self.get_header(chain_id, seq)? {

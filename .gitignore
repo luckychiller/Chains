@@ -24,3 +24,13 @@ Thumbs.db
 target
 overview.md
 progress.txt
+
+# Local node databases — never commit
+*.db/
+chains.db/
+node*.db/
+
+# Private keys — NEVER commit
+*.key
+node.key
+p2p.key

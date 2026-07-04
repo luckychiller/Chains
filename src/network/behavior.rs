@@ -1,8 +1,5 @@
-use libp2p::{
-    kad, gossipsub, mdns, identify, request_response,
-    swarm::NetworkBehaviour,
-};
 use crate::network::protocol::{SyncRequest, SyncResponse};
+use libp2p::{gossipsub, identify, kad, mdns, request_response, swarm::NetworkBehaviour};
 
 /// Combined libp2p behavior for Chains nodes.
 #[derive(NetworkBehaviour)]

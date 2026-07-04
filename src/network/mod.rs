@@ -1,8 +1,9 @@
-pub mod protocol;
 pub mod behavior;
+pub mod protocol;
 
-pub use protocol::{GossipMessage, SyncRequest, SyncResponse};
 pub use behavior::{ChainsBehaviour, ChainsBehaviourEvent};
+pub use protocol::{GossipMessage, SyncRequest, SyncResponse};
 
+#[allow(clippy::module_inception)]
 mod network;
 pub use self::network::Network;

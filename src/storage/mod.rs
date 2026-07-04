@@ -1,6 +1,6 @@
-use sled;
-use crate::models::{Header, Body, Chain, ChainsResult};
 use crate::crypto::ratchet::RatchetState;
+use crate::models::{Body, Chain, ChainsResult, Header};
+use sled;
 use std::collections::HashMap;
 
 pub mod gc;
@@ -12,6 +12,12 @@ pub struct Storage {
     db: sled::Db,
 }
 
+/// Builds the sled key for a header. The sequence is zero-padded so that
+/// lexicographic key order matches numeric sequence order in `scan_prefix`.
+pub(crate) fn header_key(chain_id: &[u8; 32], sequence: u64) -> String {
+    format!("header:{}:{:016x}", hex::encode(chain_id), sequence)
+}
+
 impl Storage {
     /// Opens a new storage instance at the specified path.
     pub fn new(path: &str) -> ChainsResult<Self> {
@@ -20,8 +26,13 @@ impl Storage {
     }
 
     /// Stores a Header for a specific chain.
-    pub fn store_header(&self, chain_id: &[u8; 32], sequence: u64, header: &Header) -> ChainsResult<()> {
-        let key = format!("header:{}:{:x}", hex::encode(chain_id), sequence);
+    pub fn store_header(
+        &self,
+        chain_id: &[u8; 32],
+        sequence: u64,
+        header: &Header,
+    ) -> ChainsResult<()> {
+        let key = header_key(chain_id, sequence);
         let value = bincode::serialize(header)?;
         self.db.insert(key.as_bytes(), value)?;
         Ok(())
@@ -29,7 +40,7 @@ impl Storage {
 
     /// Retrieves a Header by its sequence number.
     pub fn get_header(&self, chain_id: &[u8; 32], sequence: u64) -> ChainsResult<Option<Header>> {
-        let key = format!("header:{}:{:x}", hex::encode(chain_id), sequence);
+        let key = header_key(chain_id, sequence);
         if let Some(value) = self.db.get(key.as_bytes())? {
             let header: Header = bincode::deserialize(&value)?;
             Ok(Some(header))
@@ -111,12 +122,14 @@ impl Storage {
 
     /// Reconstructs a full Chain from disk (Warning: expensive for large chains).
     pub fn get_chain(&self, chain_id: &[u8; 32]) -> ChainsResult<Option<Chain>> {
-        if !self.chain_exists(chain_id)? { return Ok(None); }
-        
+        if !self.chain_exists(chain_id)? {
+            return Ok(None);
+        }
+
         let mut headers = Vec::new();
         let mut bodies = HashMap::new();
         let prefix = format!("header:{}:", hex::encode(chain_id));
-        
+
         for kv in self.db.scan_prefix(prefix.as_bytes()) {
             let (_, value) = kv?;
             let header: Header = bincode::deserialize(&value)?;
@@ -127,12 +140,20 @@ impl Storage {
             }
         }
 
-        let chain = Chain { id: *chain_id, headers, bodies };
+        let chain = Chain {
+            id: *chain_id,
+            headers,
+            bodies,
+        };
         chain.validate()?;
         Ok(Some(chain))
     }
 
-    pub fn store_ratchet_session(&self, session_id: &[u8; 32], state: &RatchetState) -> ChainsResult<()> {
+    pub fn store_ratchet_session(
+        &self,
+        session_id: &[u8; 32],
+        state: &RatchetState,
+    ) -> ChainsResult<()> {
         let key = format!("ratchet:{}", hex::encode(session_id));
         let value = bincode::serialize(state)?;
         self.db.insert(key.as_bytes(), value)?;
@@ -164,7 +185,12 @@ impl Storage {
         Ok(keys)
     }
 
-    pub fn store_epoch_key(&self, chain_id: &[u8; 32], epoch: u64, key: &[u8; 32]) -> ChainsResult<()> {
+    pub fn store_epoch_key(
+        &self,
+        chain_id: &[u8; 32],
+        epoch: u64,
+        key: &[u8; 32],
+    ) -> ChainsResult<()> {
         let db_key = format!("epoch:{}:{}", hex::encode(chain_id), epoch);
         self.db.insert(db_key.as_bytes(), key)?;
         Ok(())

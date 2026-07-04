@@ -1,9 +1,9 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use crate::models::{Header, Body, ChainsResult};
+use crate::models::{Body, ChainsResult, Header};
 use crate::storage::Storage;
 use ed25519_dalek::SigningKey;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 
 /// Handles local storage operations for the CLI.
 pub struct CommandHandlers;
@@ -24,8 +24,13 @@ impl CommandHandlers {
 
         let latest_seq = storage_lock.get_latest_sequence(&chain_id)?;
         let sequence = latest_seq + 1;
-        let prev_hash = if sequence == 1 { [0u8; 32] } else {
-            storage_lock.get_header(&chain_id, sequence - 1)?.ok_or("Prev header missing")?.block_id
+        let prev_hash = if sequence == 1 {
+            [0u8; 32]
+        } else {
+            storage_lock
+                .get_header(&chain_id, sequence - 1)?
+                .ok_or("Prev header missing")?
+                .block_id
         };
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
@@ -69,13 +74,25 @@ impl CommandHandlers {
                 let data_str = if let Some(body) = storage.get_body(&header.block_id)? {
                     if body.encryption_algo != "none" {
                         if let Some(key) = encryption_key {
-                            body.decrypt(key).map(|p| String::from_utf8_lossy(&p).to_string())
+                            body.decrypt(key)
+                                .map(|p| String::from_utf8_lossy(&p).to_string())
                                 .unwrap_or_else(|e| format!("<decryption error: {}>", e))
-                        } else { "<encrypted>".to_string() }
-                    } else { String::from_utf8_lossy(&body.ciphertext).to_string() }
-                } else { "<missing body>".to_string() };
+                        } else {
+                            "<encrypted>".to_string()
+                        }
+                    } else {
+                        String::from_utf8_lossy(&body.ciphertext).to_string()
+                    }
+                } else {
+                    "<missing body>".to_string()
+                };
 
-                println!("[{}] id={}.. data={:?}", header.sequence, hex::encode(&header.block_id[..4]), data_str);
+                println!(
+                    "[{}] id={}.. data={:?}",
+                    header.sequence,
+                    hex::encode(&header.block_id[..4]),
+                    data_str
+                );
             }
         }
         Ok(())
